@@ -204,7 +204,7 @@ function renderNotes(notesArray) {
                 
                 // Генерируем HTML для заметки
                 return `
-                    <div class="note-card" onclick="openNoteModal(${JSON.stringify(note).replace(/"/g, '&quot;')}) data-note-id="${note.id}">
+                    <div class="note-card" onclick="openNoteModal(${JSON.stringify(note).replace(/"/g, '&quot;')})" data-note-id="${note.id}">
                         <div class="note-rating-indicator ${ratingClass}"></div>
                         <div class="note-header">
                             <div class="note-title">${title}</div>
