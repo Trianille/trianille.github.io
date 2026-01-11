@@ -1,288 +1,448 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="ru">
 <head>
-    <meta charset="UTF-8" name="viewport" content="width=device-width, initial-scale=1">
-    <title>Waxom</title>
-    <link rel="stylesheet" type="text/css" href="css/stylesheet.css">
-    <link href="https://fonts.googleapis.com/css?family=Montserrat:100,300,400|Raleway:400,500,600,700,800|Roboto" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimal Notes</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Инлайн стили для немедленного применения */
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+        }
+        
+        /* Гарантируем, что загрузка будет скрыта если JS не сработал */
+        #loading {
+            display: none !important;
+        }
+        
+        #loading.visible {
+            display: flex !important;
+        }
+        
+        /* Стили для аватарки */
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 16px;
+            color: white;
+            margin-right: 12px;
+        }
+        
+        /* Базовые стили кнопок */
+        .btn-primary {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+    </style>
 </head>
-
 <body>
-    <div class='container'>
-        <header>
-            <a href=# class='logo'>
-                Waxom
-            </a>
-            <nav>
-                <ol>
-                    <li>
-                        <a href=#>home</a>
-                    </li>
-                    <li>
-                        <a href=#>about us</a>
-                    </li>
-                    <li>
-                        <a href=#>portfolio</a>
-                    </li>
-                    <li>
-                        <a href=#>features</a>
-                    </li>
-                    <li>
-                        <a href=#>blog</a>
-                    </li>
-                    <li>
-                        <a href=#>pricing</a>
-                    </li>
-                    <li>
-                        <a href=#>shortcodes</a>
-                    </li>
-                    <li>
-                        <a href=#>contact</a>
-                    </li>
-                    <li>
-                        <a href=#>
-                            <ico class='icon-cart'>
-                        </a>
-                    </li>
-                    <li>
-                        <a href=#>
-                            <ico class='icon-search'>
-                        </a>
-                    </li>
-                </ol>
-            </nav>
-        </header>
-        <main>
-            <header>
-                <div class='slide'>
-                    <div class='wrapper'>
-                        <small>
-                            Unique and Modern Design
-                        </small>
-                        <h1>
-                            Portfolio PSD Template
-                        </h1>
-                        <p>
-                            Nam liber tempor cum soluta nobis eleifend option congue nihil imperdiet doming id quod mazim placerat facer possim assum.
-                        </p>
-                        <button class='btn-get-started'>
-                            Get Started
-                        </button>
-                    </div>
-                    <div>
-                        <div class='nav-slide-arrows'>
-                            <div class='slide-arrow left'></div>
-                            <div class='slide-arrow right'></div>
-                        </div>
-                        <div class='nav-slide-dots'>
-                            <ol>
-                                <li class='slide-dot'>
+	<!-- Состояние загрузки - изначально скрыто -->
+    <div id="loading" class="hidden">
+        <div class="spinner"></div>
+        <div style="margin-top: 20px; color: #666;">Загрузка приложения...</div>
+    </div>
+    <!-- Хедер -->
+    <header id="header" style="display: none;">
+        <div class="user-info">
+            <div id="avatarContainer"></div>
+            <span id="userEmail"></span>
+            <div class="header-actions">
+                <button id="settingsBtn" class="btn btn-icon" aria-label="Настройки">
+                    <i class="fas fa-gear"></i>
+                </button>
+            </div>
+        </div>
+    </header>
 
-                                </li>
-                                <li class='slide-dot-active'>
-
-                                </li>
-                                <li class='slide-dot'>
-
-                                </li>
-                                <li class='slide-dot'>
-
-                                </li>
-                                <li class='slide-dot'>
-
-                                </li>
-                            </ol>
-                        </div>
-                    </div>
-                </div>
-            </header>
-            <section id='partners' class='partners'>
-                <div class='block'>
-                    <ico class='icon-design'></ico>
-                    <h3 class='capitalize'>
-                        Web & App Design
-                    </h3>
-                    <p>
-                        Nam liber tempor cum soluta nobis eleifend option congue nihil imperdiet doming id quod mazim.
-                    </p>
-                </div>
-                <div class='block'>
-                    <ico class='icon-development'></ico>
-                    <h3 class='capitalize'>
-                        Web & App Design
-                    </h3>
-                    <p>
-                        Nam liber tempor cum soluta nobis eleifend option congue nihil imperdiet doming id quod mazim.
-                    </p>
-                </div>
-                <div class='block'>
-                    <ico class='icon-customization'></ico>
-                    <h3 class='capitalize'>
-                        Web & App Design
-                    </h3>
-                    <p>
-                        Nam liber tempor cum soluta nobis eleifend option congue nihil imperdiet doming id quod mazim.
-                    </p>
-                </div>
-                <div class='block'>
-                    <ico class='icon-marketing'></ico>
-                    <h3 class='capitalize'>
-                        Web & App Design
-                    </h3>
-                    <p>
-                        Nam liber tempor cum soluta nobis eleifend option congue nihil imperdiet doming id quod mazim.
-                    </p>
-                </div>
-            </section>
-            <section class='realization-of-ideas'>
-                <div class='wrapper'>
-                    <h2>
-                        Waxom is Realization of your Ideas.
-                    </h2>
-                    <p>
-                        Investigationes demonstraverunt lectores legere me lius quod ii legunt saepius. Claritas est etiam processus dynamicus, qui sequitur mutationem consuetudium.
-                    </p>
-                    <img src='images/browser-center.png' alt='screenshot1'>
-                </div>
-                <div class='background'>
-                    <img class='left' src='images/browser-left.png'>
-                    <img class='right' src='images/browser-right.png'>
-                </div>
-            </section>
-            <section class='text-boxes'>
-                <div>
-                    <h2>
-                        Waxom Multipurpose WordPress Theme
-                    </h2>
-                    <small>
-                        Don't Forget to Rate the Template. Thanks so much!
-                    </small>
-                </div>
-                <div>
-                    <button class='btn-purchase-now'>
-                        PURCHASE NOW
+    <!-- Основной контент -->
+    <main id="main" style="display: none;">
+        <div class="controls">
+            <button onclick="openNoteModal()" class="btn-primary">
+                <i class="fas fa-plus"></i> Новая заметка
+            </button>
+			<button onclick="startLearningSession()" class="btn-primary">
+				<i class="fas fa-play-circle"></i> Начать сессию
+			</button>
+            <div class="controls-right">
+                <div id="activeFilter" class="active-filter" style="display: none;">
+                    <span id="filterTag" class="tag-badge"></span>
+                    <button onclick="clearFilter()" class="btn-clear">
+                        <i class="fas fa-times"></i>
                     </button>
                 </div>
-            </section>
-        </main>
-        <footer>
-            <div class='wrapper'>
-                <div class='about'>
-                    <a href=# class='logo'>
-                        Waxom
-                    </a>
-                    <p>
-                        Lorem ipsum dolor sit amet, consectetuer adipiscing elit, sed diam nonummy nibh euismod tincidunt ut laoreet dolore magna aliquam erat volutpat. Ut wisi enim ad minim veniam, quis nostrud exerci suscipit lobortis claritatem.
-                    </p>
-                    <a href=#>
-                        Read More >
-                    </a>
-                </div>
-                <div class='recent-posts'>
-                    <h3>
-                        Recent Posts
-                    </h3>
-                    <div class='wrapper'>
-                        <div class='recent-post'>
-                            <small>
-                                september 06, 2015
-                            </small>
-                            <p>
-                                Lorem ipsum dolor sit amet, consectetuer adipiscing elit
-                            </p>
-                        </div>
-                        <div class='recent-post'>
-                            <small>
-                                september 06, 2015
-                            </small>
-                            <p>
-                                Lorem ipsum dolor sit amet, consectetuer adipiscing elit
-                            </p>
-                        </div>
-                        <div class='recent-post'>
-                            <small>
-                                september 06, 2015
-                            </small>
-                            <p>
-                                Lorem ipsum dolor sit amet, consectetuer adipiscing elit
-                            </p>
-                        </div>
-                    </div>
-                </div>
-                <div class='our-twitter'>
-                    <h3>
-                        Our Twitter
-                    </h3>
-                    <div class='wrapper'>
-                        <div class='twit'>
-                            <p>
-                                @waxom Cum soluta nobis eleifend option congue nihil imperdiet doming
-                            </p>
-                            <small>
-                                sometimes ago
-                            </small>
-                        </div>
-                        <div class='twit'>
-                            <p>
-                                @waxom Cum soluta nobis eleifend option congue nihil imperdiet doming
-                            </p>
-                            <small>
-                                sometimes ago
-                            </small>
-                        </div>
-                        <div class='twit'>
-                            <p>
-                                @waxom Cum soluta nobis eleifend option congue nihil imperdiet doming
-                            </p>
-                            <small>
-                                sometimes ago
-                            </small>
-                        </div>
-                    </div>
-                </div>
-                <div class='dribbble-widget'>
-                    <h3>
-                        Dribble Widget
-                    </h3>
-                    <div class='widget'>
-                        <img src='images/footer/photo1.png'>
-                        <img src='images/footer/photo2.png'>
-                        <img src='images/footer/photo3.png'>
-                        <img src='images/footer/photo4.png'>
-                    </div>
-                </div>
+                <button onclick="openTagsModal()" class="btn-secondary" title="Управление тегами">
+                    <i class="fas fa-tags"></i>
+                </button>
+                <!-- Кнопка синхронизации будет добавлена скриптом -->
             </div>
-            <div class='copyright'>
-                <div class='left'>
-                    <ol>
-                        <li>
-                            Copyright &copy; 2015 Waxom
-                        </li>
-                        <li>
-                            <a href=#>Privacy Policy</a>
-                        </li>
-                        <li>
-                            <a href=#>FAQ</a>
-                        </li>
-                        <li>
-                            <a href=#>Support</a>
-                        </li>
-                    </ol>
-                </div>
-                <div class='right'>
-                    <ol>
-                        <li>
-                            Designed by <a href=#>ThemeFire</a>
-                        </li>
-                        <li>
-                            Only on <a href=#>Envato Market</a>
-                        </li>
-                    </ol>
-                </div>
-            </div>
-        </footer>
-    </div>
-</body>
+        </div>
+        <div id="notesContainer" class="notes-grid"></div>
+    </main>
 
+    <!-- Модальное окно авторизации -->
+    <div id="authModal" class="modal" style="display: none;" onclick="closeModalOnOutsideClick(event, 'authModal')">
+        <div class="modal-content">
+            <h2>Вход в систему</h2>
+            <div class="form-group">
+                <input type="email" id="email" placeholder="Email" autocomplete="email">
+            </div>
+            <div class="form-group">
+                <input type="password" id="password" placeholder="Пароль" autocomplete="current-password">
+            </div>
+            <div class="modal-actions">
+                <button onclick="signIn()" class="btn-primary">Войти</button>
+                <button onclick="signUp()" class="btn-secondary">Регистрация</button>
+            </div>
+            <div id="authMessage"></div>
+        </div>
+    </div>
+
+    <!-- Модальное окно заметки -->
+    <div id="noteModal" class="modal" style="display: none;" onclick="closeModalOnOutsideClick(event, 'noteModal')">
+        <div class="modal-content">
+            <h2 id="modalTitle">Новая заметка</h2>
+            <div class="form-group">
+                <input type="text" id="modalNoteTitle" placeholder="Заголовок" maxlength="200">
+            </div>
+            <div class="form-group">
+                <input type="text" id="modalNoteBody" placeholder="Текст" maxlength="200">
+            </div>
+            <div class="form-group">
+                <input type="text" id="modalNoteSubbody" placeholder="Дополнительный текст" maxlength="200">
+            </div>
+            <div class="form-group">
+                <textarea type="text" id="modalNoteNotes" placeholder="Заметки"  rows="8"></textarea>
+            </div>
+			
+			<div class="form-group">
+				<label>Оценка заметки</label>
+				<div id="ratingSelector" class="rating-selector">
+					<!-- Опции будут добавлены динамически -->
+				</div>
+			</div>
+            
+            <div class="form-group">
+                <label>Теги</label>
+                <div id="availableTags" class="tags-selector">
+                    <!-- Теги будут загружены динамически -->
+                </div>
+            </div>
+            
+            <div class="modal-actions">
+                <button onclick="saveNote()" id="saveNoteBtn" class="btn-primary">Сохранить</button>
+                <button onclick="closeNoteModal()" class="btn-secondary">Отмена</button>
+                <button onclick="showDeleteNoteConfirm()" id="deleteNoteBtn" class="btn-danger" style="display: none;">
+                    Удалить
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно управления тегами (только список) -->
+    <div id="tagsModal" class="modal" style="display: none;" onclick="closeModalOnOutsideClick(event, 'tagsModal')">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button onclick="openAddTagModal()" class="btn-primary btn-icon" title="Добавить тег">
+                    <i class="fas fa-plus"></i>
+                </button>
+                <button onclick="closeTagsModal()" class="btn-secondary btn-icon" title="Закрыть">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div id="tagsList" class="tags-grid">
+                <!-- Список тегов будет загружен динамически -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно добавления тега -->
+    <div id="addTagModal" class="modal" style="display: none;" onclick="closeModalOnOutsideClick(event, 'addTagModal')">
+        <div class="modal-content">
+            <h2>Добавить тег</h2>
+            
+            <div class="form-group">
+                <input type="text" id="newTagName" placeholder="Название тега" maxlength="20">
+            </div>
+            
+            <div class="form-group">
+                <label>Цвет тега</label>
+                <div class="color-picker">
+                    <div class="color-options">
+                        <div class="color-option" data-color="#FF6B6B" style="background: #FF6B6B;"></div>
+                        <div class="color-option" data-color="#4ECDC4" style="background: #4ECDC4;"></div>
+                        <div class="color-option" data-color="#FFD166" style="background: #FFD166;"></div>
+                        <div class="color-option" data-color="#06D6A0" style="background: #06D6A0;"></div>
+                        <div class="color-option" data-color="#118AB2" style="background: #118AB2;"></div>
+                        <div class="color-option" data-color="#073B4C" style="background: #073B4C;"></div>
+                        <div class="color-option" data-color="#7209B7" style="background: #7209B7;"></div>
+                        <div class="color-option" data-color="#F72585" style="background: #F72585;"></div>
+                        <div class="color-option" data-color="#FF9F1C" style="background: #FF9F1C;"></div>
+                        <div class="color-option" data-color="#2A9D8F" style="background: #2A9D8F;"></div>
+                        <div class="color-option" data-color="#E76F51" style="background: #E76F51;"></div>
+                        <div class="color-option" data-color="#264653" style="background: #264653;"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-actions">
+                <button onclick="addNewTag()" class="btn-primary">Добавить</button>
+                <button onclick="closeAddTagModal()" class="btn-secondary">Отмена</button>
+            </div>
+        </div>
+    </div>
+	
+	<!-- Модальное окно импорта -->
+    <div id="importModal" class="modal" style="display: none;" onclick="closeModalOnOutsideClick(event, 'importModal')">
+        <div class="modal-content">
+            <h2>Импорт заметок</h2>
+            
+            <div class="form-group">
+                <label>Выберите JSON файл с заметками</label>
+                <input type="file" id="importFile" accept=".json" style="padding: 0; border: none;">
+                <div class="file-info" id="fileInfo" style="display: none; margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 4px;">
+                    <div id="fileName"></div>
+                    <div id="fileSize"></div>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="importOverwrite" checked>
+                    Заменить существующие заметки с одинаковыми ID
+                </label>
+            </div>
+            
+            <div id="importPreview" class="import-preview" style="display: none;">
+                <h3>Предпросмотр (первые 3 заметки):</h3>
+                <div id="previewContent"></div>
+                <div id="totalNotes" style="margin-top: 10px; font-size: 14px; color: #666;"></div>
+            </div>
+            
+            <div id="importStatus" class="import-status" style="display: none; margin: 15px 0; padding: 10px; border-radius: 4px;"></div>
+            
+            <div class="modal-actions">
+                <button onclick="processImport()" id="importBtn" class="btn-primary" disabled>
+                    <i class="fas fa-upload"></i> Импортировать
+                </button>
+                <button onclick="closeImportModal()" class="btn-secondary">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно экспорта -->
+    <div id="exportModal" class="modal" style="display: none;" onclick="closeModalOnOutsideClick(event, 'exportModal')">
+        <div class="modal-content">
+            <h2>Экспорт заметок</h2>
+            
+            <div class="form-group">
+                <label>Выберите формат экспорта</label>
+                <select id="exportFormat" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="json">JSON (полный)</option>
+                    <option value="json_min">JSON (минимизированный)</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>Параметры экспорта</label>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <label>
+                        <input type="checkbox" id="exportWithTags" checked>
+                        Включать теги
+                    </label>
+                    <label>
+                        <input type="checkbox" id="exportTimestamps" checked>
+                        Включать даты создания/обновления
+                    </label>
+                </div>
+            </div>
+            
+            <div id="exportStats" class="export-stats" style="margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                <h3>Статистика</h3>
+                <div>Всего заметок: <span id="exportTotalNotesCount">0</span></div>
+                <div>Заметок с тегами: <span id="exportNotesWithTags">0</span></div>
+                <div>Всего тегов: <span id="exportTotalTagsCount">0</span></div>
+            </div>
+            
+            <div id="exportStatus" class="export-status" style="display: none; margin: 15px 0; padding: 10px; border-radius: 4px;"></div>
+            
+            <div class="modal-actions">
+                <button onclick="exportNotes()" class="btn-primary">
+                    <i class="fas fa-download"></i> Экспортировать
+                </button>
+                <button onclick="closeExportModal()" class="btn-secondary">Отмена</button>
+            </div>
+        </div>
+    </div>
+	
+	<!-- Модальное окно настроек -->
+	<div id="settingsModal" class="modal" style="display: none;" onclick="closeModalOnOutsideClick(event, 'settingsModal')">
+	  <div class="modal-content">
+		<div class="modal-header">
+			<div id="avatarContainerOptions"></div>
+			<span id="userEmailOptions"></span>
+                <button onclick="signOut()" title="Выйти" class="logout-btn">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+		  <button class="close-btn" data-modal-id="settingsModal">
+			<i class="fas fa-times"></i>
+		  </button>
+		  
+		</div>
+		
+		<div class="modal-body">
+			<!-- Кнопки импорта/экспорта -->
+				<div>
+                <button onclick="showExportNotes()" class="btn-icon" title="Экспорт заметок">
+                    <i class="fas fa-download"></i>
+                </button>
+                <button onclick="showImportNotes()" class="btn-icon" title="Импорт заметок">
+                    <i class="fas fa-upload"></i>
+                </button>
+				</div>
+		  <!-- Статистика -->
+		  <div class="settings-section">
+			<h3>Статистика</h3>
+			<div class="statistics">
+			  <div class="stat-item">
+				<span class="stat-label">Всего заметок:</span>
+				<span id="settingsTotalNotesCount" class="stat-value">0</span>
+			  </div>
+			  <div class="stat-item">
+				<span class="stat-label">Тегов:</span>
+				<span id="settingsTotalTagsCount" class="stat-value">0</span>
+			  </div>
+			</div>
+		  </div>
+		  
+		  <!-- Настройки отображения -->
+		  <div class="settings-section">
+			<h3>Настройки отображения</h3>
+			<div class="form-group">
+			  <label for="cardsPerSessionSelect">
+				Количество карточек за сессию:
+			  </label>
+			  <select id="cardsPerSessionSelect" class="form-select">
+			  <option value="1">1 карточка</option>
+				<option value="10">10 карточек</option>
+				<option value="20">20 карточек</option>
+				<option value="30">30 карточек</option>
+			  </select>
+			</div>
+		  </div>
+		</div>
+		
+		<div class="modal-footer">
+		  <button id="saveSettingsBtn" class="btn btn-primary">
+			Сохранить
+		  </button>
+		  <button class="btn btn-secondary" data-modal-id="settingsModal">
+			Отмена
+		  </button>
+		</div>
+	  </div>
+	</div>
+	
+	<!-- Модальное окно сессии обучения -->
+	<div id="sessionModal" class="modal" style="display: none;" onclick="closeModalOnOutsideClick(event, 'sessionModal')">
+		<div class="modal-content" style="max-width: 800px;">
+			<div class="session-header">
+				<h2 id="sessionProgress">1 / 20</h2>
+				<button onclick="closeSessionModal()" class="btn-icon" style="margin-left: auto;">
+					<i class="fas fa-times"></i>
+				</button>
+			</div>
+			
+			<div class="session-content">
+				<!-- Заметка будет загружаться динамически -->
+				<div id="sessionNoteContent" style="padding: 20px; border: 1px solid #f0f0f0; border-radius: 8px; margin-bottom: 20px;">
+					<!-- Контент заметки будет здесь -->
+				</div>
+				
+				<div class="form-group">
+					<label>Оценка заметки</label>
+					<div id="sessionRatingSelector" class="rating-selector">
+						<!-- Опции оценки будут добавлены динамически -->
+					</div>
+				</div>
+				
+				<div class="modal-actions" style="margin-top: 20px;">
+					<button onclick="skipCurrentNote()" class="btn-secondary">
+						<i class="fas fa-forward"></i> Пропустить
+					</button>
+					<button onclick="nextNoteWithRating()" class="btn-primary">
+						<i class="fas fa-check"></i> Оценить и дальше
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+    <!-- Попап подтверждения -->
+    <div id="confirmPopup" class="popup" style="display: none;">
+		<div class="popup-content">
+			<div class="popup-message" id="popupMessage"></div>
+			<div class="popup-actions">
+				<button onclick="confirmYes()" class="btn-primary">Да</button>
+				<button onclick="confirmNo()" class="btn-secondary">Нет</button>
+			</div>
+		</div>
+	</div>
+
+    <!-- Попап уведомления -->
+    <div id="alertPopup" class="popup" style="display: none;">
+        <div class="popup-content">
+            <div class="popup-message" id="alertMessage"></div>
+            <div class="popup-actions">
+                <button onclick="closeAlert()" class="btn-primary">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Состояние загрузки -->
+    <div id="loading" class="loading">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Подключаем файлы -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    
+    <script src="firebase-config.js"></script>
+    <script src="local-storage.js"></script>
+    <script src="app.js"></script>
+    <script src="auth.js"></script>
+    <script src="notes.js"></script>
+    <script src="tags.js"></script>
+    <script src="ui.js"></script>
+    <script src="utils.js"></script>
+    <script src="import-export.js"></script>
+    <script src="settings.js"></script>
+    <script src="sync.js"></script>
+	<script src="session.js"></script>
+</body>
 </html>

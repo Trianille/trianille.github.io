@@ -1,0 +1,2424 @@
+// Глобальные переменные состояния
+let currentUser = null;
+let currentNoteId = null;
+let unsubscribeNotes = null;
+let unsubscribeTags = null;
+let currentFilterTag = null;
+let selectedColor = '#FF6B6B';
+let allTags = [];
+let selectedNoteTags = [];
+let selectedRating = 0;
+
+// Инициализация при загрузке
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('Приложение инициализируется');
+    
+    // Настройка Firebase авторизации
+    auth.onAuthStateChanged(handleAuthStateChanged);
+    
+    // Настройка UI
+    setupColorPicker();
+    setupModalCloseListeners();
+    
+    // Инициализация модулей
+    initAuthModule();
+    initNotesModule();
+    initTagsModule();
+    initUIModule();
+	initImportExportModule();
+	initSettingsModule();
+});
+
+// Обработка изменения состояния авторизации
+async function handleAuthStateChanged(user) {
+    console.log('Состояние авторизации изменено:', user?.uid);
+    currentUser = user;
+    
+    if (user) {
+        showMainApp(user);
+        
+        // Инициализируем подписку на теги и ждем первой загрузки
+        await initializeTags();
+        
+        // Теперь подписываемся на заметки
+        subscribeToNotes();
+        
+    } else {
+        hideMainApp();
+        showAuthModal();
+    }
+}
+
+// Инициализация тегов с ожиданием
+function initializeTags() {
+    return new Promise((resolve) => {
+        const state = window.appState;
+        const currentUser = state.getCurrentUser();
+        
+        if (!currentUser) {
+            resolve();
+            return;
+        }
+        
+        if (state.unsubscribeTags) {
+            state.unsubscribeTags();
+        }
+        
+        let tagsLoaded = false;
+        
+        const unsubscribe = state.db.collection('users').doc(currentUser.uid)
+            .collection('tags')
+            .orderBy('name')
+            .onSnapshot(async (snapshot) => {
+                const tags = [];
+                snapshot.forEach(doc => {
+                    tags.push({
+                        id: doc.id,
+                        ...doc.data()
+                    });
+                });
+                
+                // Подсчитываем использование для каждого тега
+                const tagsWithUsage = await Promise.all(
+                    tags.map(async (tag) => {
+                        try {
+                            const notesQuery = await state.db.collection('users').doc(currentUser.uid)
+                                .collection('notes')
+                                .where('tagsArray', 'array-contains', tag.name)
+                                .get();
+                            
+                            return {
+                                ...tag,
+                                usageCount: notesQuery.size
+                            };
+                        } catch (error) {
+                            console.error('Ошибка подсчета тега:', error);
+                            return { ...tag, usageCount: 0 };
+                        }
+                    })
+                );
+                
+                state.setAllTags(tagsWithUsage);
+                console.log('Теги инициализированы:', tagsWithUsage.length, 'штук');
+                
+                // Разрешаем промис при первой загрузке
+                if (!tagsLoaded) {
+                    tagsLoaded = true;
+                    resolve();
+                }
+                
+                // Обновляем UI тегов
+                if (window.updateTagsUI) {
+                    window.updateTagsUI();
+                }
+                
+            }, error => {
+                console.error('Ошибка загрузки тегов:', error);
+                resolve(); // Все равно разрешаем, чтобы не блокировать
+            });
+        
+        state.setUnsubscribeTags(() => unsubscribe());
+        
+        // Таймаут на случай, если тегов нет
+        setTimeout(() => {
+            if (!tagsLoaded) {
+                console.log('Таймаут загрузки тегов, продолжаем без них');
+                tagsLoaded = true;
+                resolve();
+            }
+        }, 3000);
+    });
+}
+
+// Настройка выбора цвета
+function setupColorPicker() {
+    const colorOptions = document.querySelectorAll('.color-option');
+    colorOptions.forEach(option => {
+        option.addEventListener('click', function() {
+            colorOptions.forEach(opt => opt.classList.remove('selected'));
+            this.classList.add('selected');
+            selectedColor = this.dataset.color;
+        });
+    });
+    colorOptions[0].classList.add('selected');
+}
+
+// Настройка закрытия модальных окон
+function setupModalCloseListeners() {
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeAllModals();
+    });
+}
+
+// Закрытие по клику вне области
+function closeModalOnOutsideClick(event, modalId) {
+    if (event.target.id === modalId) closeModal(modalId);
+}
+
+// Экспорт глобальных переменных для модулей
+window.appState = {
+    getCurrentUser: () => currentUser,
+    getCurrentNoteId: () => currentNoteId,
+    setCurrentNoteId: (id) => { currentNoteId = id; },
+    getAllTags: () => allTags,
+    setAllTags: (tags) => { allTags = tags; },
+    getSelectedNoteTags: () => selectedNoteTags,
+    setSelectedNoteTags: (tags) => { selectedNoteTags = tags; },
+    getCurrentFilterTag: () => currentFilterTag,
+    setCurrentFilterTag: (tag) => { currentFilterTag = tag; },
+    getSelectedColor: () => selectedColor,
+	getSelectedRating: () => selectedRating, // Геттер для оценки
+    setSelectedRating: (rating) => { selectedRating = parseInt(rating) || 0; }, // Сеттер для оценки
+    
+    // Firebase
+    db,
+    auth,
+    
+    // Подписки
+    unsubscribeNotes,
+    unsubscribeTags,
+    setUnsubscribeNotes: (fn) => { unsubscribeNotes = fn; },
+    setUnsubscribeTags: (fn) => { unsubscribeTags = fn; }
+};// Модуль авторизации
+function initAuthModule() {
+    console.log('Модуль авторизации инициализирован');
+}
+
+// Вход
+async function signIn() {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    
+    if (!email || !password) {
+        showAuthMessage('Введите email и пароль', 'error');
+        return;
+    }
+    
+    showLoading();
+    try {
+        await auth.signInWithEmailAndPassword(email, password);
+    } catch (error) {
+        showAuthMessage(error.message, 'error');
+        hideLoading();
+    }
+}
+
+// Регистрация
+async function signUp() {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    
+    if (!email || !password) {
+        showAuthMessage('Введите email и пароль', 'error');
+        return;
+    }
+    
+    showLoading();
+    try {
+        await auth.createUserWithEmailAndPassword(email, password);
+        showAuthMessage('Регистрация успешна!', 'success');
+    } catch (error) {
+        showAuthMessage(error.message, 'error');
+        hideLoading();
+    }
+}
+
+// Выход
+async function signOut() {
+    showLoading();
+    try {
+        await auth.signOut();
+    } catch (error) {
+        console.error('Ошибка выхода:', error);
+        hideLoading();
+    }
+}
+
+// Показать основное приложение
+function showMainApp(user) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('header').style.display = 'flex';
+    document.getElementById('main').style.display = 'block';
+	
+	const mainEmail = user.email;
+	const avatar = generateAvatar(mainEmail);
+	document.getElementById('avatarContainer').appendChild(avatar);
+	document.getElementById('avatarContainerOptions').appendChild(avatar);
+	
+	document.getElementById('userEmail').textContent = mainEmail;
+    document.getElementById('userEmailOptions').textContent = mainEmail;
+	
+    document.getElementById('authModal').style.display = 'none';
+}
+
+// Скрыть основное приложение
+function hideMainApp() {
+    const state = window.appState;
+    
+    document.getElementById('header').style.display = 'none';
+    document.getElementById('main').style.display = 'none';
+    document.getElementById('notesContainer').innerHTML = '';
+    
+    if (state.unsubscribeNotes) {
+        state.unsubscribeNotes();
+        state.setUnsubscribeNotes(null);
+    }
+    
+    if (state.unsubscribeTags) {
+        state.unsubscribeTags();
+        state.setUnsubscribeTags(null);
+    }
+    
+    state.setAllTags([]);
+    state.setSelectedNoteTags([]);
+}
+
+// Показать модальное окно авторизации
+function showAuthModal() {
+    document.getElementById('authModal').style.display = 'flex';
+    document.getElementById('loading').style.display = 'none';
+}
+
+// Экспорт функций
+window.signIn = signIn;
+window.signUp = signUp;
+window.signOut = signOut;
+window.showAuthModal = showAuthModal;
+window.showMainApp = showMainApp;
+window.hideMainApp = hideMainApp;// Конфигурация Firebase - ЗАМЕНИТЕ на свою!
+const firebaseConfig = {
+    apiKey: "AIzaSyARjHo31bujB14BavNlYaiC4Q4GK7zqEWY",
+    authDomain: "webappjp-f68a2.firebaseapp.com",
+    projectId: "webappjp-f68a2",
+    storageBucket: "webappjp-f68a2.firebasestorage.app",
+    messagingSenderId: "404634215374",
+    appId: "1:404634215374:web:0ec16a9f5f9c2de726819f",
+    measurementId: "G-Q0XZ2MGX9T"
+  };
+
+// Инициализация Firebase
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const auth = firebase.auth();// Модуль импорта/экспорта заметок
+function initImportExportModule() {
+    console.log('Модуль импорта/экспорта инициализирован');
+    
+    // Настройка обработчиков для импорта
+    setupImportHandlers();
+}
+
+// Настройка обработчиков импорта
+function setupImportHandlers() {
+    const importFileInput = document.getElementById('importFile');
+    if (importFileInput) {
+        importFileInput.addEventListener('change', handleFileSelect);
+    }
+}
+
+// Обработка выбора файла
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    const importBtn = document.getElementById('importBtn');
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    const fileSize = document.getElementById('fileSize');
+    const importPreview = document.getElementById('importPreview');
+    const previewContent = document.getElementById('previewContent');
+    const totalNotes = document.getElementById('totalNotes');
+    
+    if (!file) {
+        importBtn.disabled = true;
+        fileInfo.style.display = 'none';
+        importPreview.style.display = 'none';
+        return;
+    }
+    
+    // Проверяем расширение файла
+    if (!file.name.toLowerCase().endsWith('.json')) {
+        showAlert('Пожалуйста, выберите JSON файл');
+        importBtn.disabled = true;
+        return;
+    }
+    
+    // Показываем информацию о файле
+    fileName.textContent = `Файл: ${file.name}`;
+    fileSize.textContent = `Размер: ${(file.size / 1024).toFixed(2)} КБ`;
+    fileInfo.style.display = 'block';
+    
+    // Читаем и парсим файл
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        try {
+            const fileContent = e.target.result;
+            const notesData = JSON.parse(fileContent);
+            
+            // Проверяем структуру данных
+            if (!Array.isArray(notesData)) {
+                throw new Error('Файл должен содержать массив заметок');
+            }
+            
+            // Проверяем первую заметку на наличие обязательных полей
+            if (notesData.length > 0) {
+                const sampleNote = notesData[0];
+                if (!sampleNote.title && !sampleNote.body && !sampleNote.text) {
+                    throw new Error('Неверный формат заметок');
+                }
+            }
+            
+            // Сохраняем данные для импорта
+            window.importNotesData = notesData;
+            
+            // Показываем превью
+            showImportPreview(notesData);
+            
+            // Активируем кнопку импорта
+            importBtn.disabled = false;
+            
+        } catch (error) {
+            console.error('Ошибка парсинга JSON:', error);
+            showAlert(`Ошибка: ${error.message}. Убедитесь, что файл содержит валидный JSON с массивом заметок.`);
+            importBtn.disabled = true;
+            importPreview.style.display = 'none';
+        }
+    };
+    
+    reader.onerror = function() {
+        showAlert('Ошибка чтения файла');
+        importBtn.disabled = true;
+    };
+    
+    reader.readAsText(file);
+}
+
+// Показ превью импорта
+function showImportPreview(notesData) {
+    const importPreview = document.getElementById('importPreview');
+    const previewContent = document.getElementById('previewContent');
+    const totalNotes = document.getElementById('totalNotes');
+    
+    if (notesData.length === 0) {
+        importPreview.style.display = 'none';
+        return;
+    }
+    
+    // Показываем первые 3 заметки для превью
+    const previewNotes = notesData.slice(0, 3);
+    
+    previewContent.innerHTML = previewNotes.map((note, index) => `
+        <div class="preview-note" style="margin-bottom: 10px; padding: 10px; background: #fff; border: 1px solid #eee; border-radius: 4px;">
+            <div style="font-weight: 600; margin-bottom: 5px;">
+                ${index + 1}. ${note.title || 'Без названия'}
+            </div>
+            <div style="font-size: 12px; color: #666;">
+                ${note.body ? note.body.substring(0, 100) + (note.body.length > 100 ? '...' : '') : ''}
+            </div>
+            ${note.tagsArray && note.tagsArray.length > 0 ? `
+                <div style="margin-top: 5px;">
+                    Теги: ${note.tagsArray.join(', ')}
+                </div>
+            ` : ''}
+        </div>
+    `).join('');
+    
+    totalNotes.textContent = `Всего заметок для импорта: ${notesData.length}`;
+    importPreview.style.display = 'block';
+}
+
+// Показать модальное окно импорта
+function showImportNotes() {
+    // Сбрасываем форму
+    document.getElementById('importFile').value = '';
+    document.getElementById('importBtn').disabled = true;
+    document.getElementById('fileInfo').style.display = 'none';
+    document.getElementById('importPreview').style.display = 'none';
+    document.getElementById('importStatus').style.display = 'none';
+    document.getElementById('importOverwrite').checked = true;
+    
+    document.getElementById('importModal').style.display = 'flex';
+}
+
+// Закрыть модальное окно импорта
+function closeImportModal() {
+    document.getElementById('importModal').style.display = 'none';
+    // Очищаем данные импорта
+    window.importNotesData = null;
+}
+
+// Обработка импорта
+async function processImport() {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    const importNotesData = window.importNotesData;
+    const overwrite = document.getElementById('importOverwrite').checked;
+    const importStatus = document.getElementById('importStatus');
+    
+    if (!currentUser || !importNotesData || importNotesData.length === 0) {
+        showAlert('Нет данных для импорта');
+        return;
+    }
+    
+    try {
+        showLoading();
+        importStatus.style.display = 'block';
+        importStatus.innerHTML = '<div style="color: #2196f3;"><i class="fas fa-spinner fa-spin"></i> Начинаем импорт...</div>';
+        
+        const importedCount = { success: 0, skipped: 0, error: 0 };
+        const errors = [];
+        
+        // Импортируем заметки по одной
+        for (let i = 0; i < importNotesData.length; i++) {
+            const noteData = importNotesData[i];
+            
+            try {
+                // Подготавливаем данные для импорта
+                const noteToImport = {
+                    title: noteData.title || '',
+                    body: noteData.body || noteData.text || '',
+                    subbody: noteData.subbody || '',
+                    notes: noteData.notes || '',
+                    tagsArray: noteData.tagsArray || noteData.tags || [],
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    userId: currentUser.uid
+                };
+                
+                // Если есть createdAt и мы не перезаписываем, сохраняем оригинальную дату
+                if (noteData.createdAt && !overwrite) {
+                    noteToImport.createdAt = noteData.createdAt.toDate ? 
+                        noteData.createdAt.toDate() : new Date(noteData.createdAt);
+                } else {
+                    noteToImport.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                }
+                
+                // Проверяем, существует ли уже заметка с таким ID
+                if (noteData.id && !overwrite) {
+                    const existingDoc = await state.db.collection('users').doc(currentUser.uid)
+                        .collection('notes').doc(noteData.id).get();
+                    
+                    if (existingDoc.exists) {
+                        importedCount.skipped++;
+                        continue;
+                    }
+                }
+                
+                // Сохраняем заметку
+                if (noteData.id && overwrite) {
+                    // Обновляем существующую заметку
+                    await state.db.collection('users').doc(currentUser.uid)
+                        .collection('notes').doc(noteData.id).set(noteToImport);
+                } else {
+                    // Создаем новую заметку
+                    await state.db.collection('users').doc(currentUser.uid)
+                        .collection('notes').add(noteToImport);
+                }
+                
+                importedCount.success++;
+                
+                // Обновляем статус каждые 10 заметок
+                if (i % 10 === 0 || i === importNotesData.length - 1) {
+                    importStatus.innerHTML = `
+                        <div style="color: #2196f3;">
+                            <i class="fas fa-spinner fa-spin"></i> 
+                            Импортировано ${i + 1} из ${importNotesData.length} заметок...
+                        </div>
+                    `;
+                }
+                
+            } catch (error) {
+                console.error(`Ошибка импорта заметки ${i}:`, error);
+                importedCount.error++;
+                errors.push(`Заметка ${i + 1}: ${error.message}`);
+                
+                // Продолжаем импорт остальных заметок
+                continue;
+            }
+        }
+        
+        hideLoading();
+        
+        // Показываем результат
+        let statusHtml = `
+            <div style="color: #4caf50;">
+                <i class="fas fa-check-circle"></i> Импорт завершен!
+            </div>
+            <div style="margin-top: 10px; font-size: 14px;">
+                <div>Успешно: ${importedCount.success}</div>
+                <div>Пропущено: ${importedCount.skipped}</div>
+                <div>Ошибок: ${importedCount.error}</div>
+            </div>
+        `;
+        
+        if (errors.length > 0) {
+            statusHtml += `
+                <div style="margin-top: 10px; font-size: 12px; color: #f44336;">
+                    <strong>Ошибки:</strong><br>
+                    ${errors.slice(0, 5).join('<br>')}
+                    ${errors.length > 5 ? `<br>... и еще ${errors.length - 5} ошибок` : ''}
+                </div>
+            `;
+        }
+        
+        importStatus.innerHTML = statusHtml;
+        
+        // Очищаем данные импорта через 3 секунды
+        setTimeout(() => {
+            closeImportModal();
+        }, 3000);
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Ошибка импорта:', error);
+        importStatus.innerHTML = `
+            <div style="color: #f44336;">
+                <i class="fas fa-exclamation-circle"></i> Ошибка импорта: ${error.message}
+            </div>
+        `;
+    }
+}
+
+// Показать модальное окно экспорта
+async function showExportNotes() {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    
+    if (!currentUser) {
+        showAlert('Сначала войдите в систему');
+        return;
+    }
+    
+    try {
+        showLoading();
+        
+        // Получаем все заметки пользователя
+        const notesQuery = await state.db.collection('users').doc(currentUser.uid)
+            .collection('notes')
+            .orderBy('updatedAt', 'desc')
+            .get();
+        
+        const notes = [];
+        notesQuery.forEach(doc => {
+            notes.push({
+                id: doc.id,
+                ...doc.data()
+            });
+        });
+        
+        // Получаем все теги пользователя
+        const tagsQuery = await state.db.collection('users').doc(currentUser.uid)
+            .collection('tags')
+            .get();
+        
+        const tags = [];
+        tagsQuery.forEach(doc => {
+            tags.push({
+                id: doc.id,
+                ...doc.data()
+            });
+        });
+        
+        hideLoading();
+        
+        // Обновляем статистику
+        document.getElementById('exportTotalNotesCount').textContent = notes.length;
+        document.getElementById('exportNotesWithTags').textContent = notes.filter(n => n.tagsArray && n.tagsArray.length > 0).length;
+        document.getElementById('exportTotalTagsCount').textContent = tags.length;
+        
+        // Сохраняем данные для экспорта
+        window.exportNotesData = notes;
+        window.exportTagsData = tags;
+        
+        document.getElementById('exportModal').style.display = 'flex';
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Ошибка загрузки данных для экспорта:', error);
+        showAlert('Ошибка загрузки данных: ' + error.message);
+    }
+}
+
+// Закрыть модальное окно экспорта
+function closeExportModal() {
+    document.getElementById('exportModal').style.display = 'none';
+    // Очищаем данные экспорта
+    window.exportNotesData = null;
+    window.exportTagsData = null;
+}
+
+// Экспорт заметок
+function exportNotes() {
+    const exportNotesData = window.exportNotesData;
+    const exportTagsData = window.exportTagsData;
+    const exportFormat = document.getElementById('exportFormat').value;
+    const withTags = document.getElementById('exportWithTags').checked;
+    const withTimestamps = document.getElementById('exportTimestamps').checked;
+    const exportStatus = document.getElementById('exportStatus');
+    
+    if (!exportNotesData || exportNotesData.length === 0) {
+        showAlert('Нет заметок для экспорта');
+        return;
+    }
+    
+    try {
+        exportStatus.style.display = 'block';
+        exportStatus.innerHTML = '<div style="color: #2196f3;"><i class="fas fa-spinner fa-spin"></i> Подготовка экспорта...</div>';
+        
+        // Подготавливаем данные для экспорта
+        let dataToExport;
+        
+        if (withTags) {
+            dataToExport = {
+                notes: exportNotesData.map(note => {
+                    const exportedNote = { ...note };
+                    
+                    // Очищаем Firebase-specific поля
+                    delete exportedNote.userId;
+                    
+                    if (!withTimestamps) {
+                        delete exportedNote.createdAt;
+                        delete exportedNote.updatedAt;
+                    }
+                    
+                    // Конвертируем Timestamp в Date если нужно
+                    if (withTimestamps) {
+                        if (exportedNote.createdAt && exportedNote.createdAt.toDate) {
+                            exportedNote.createdAt = exportedNote.createdAt.toDate().toISOString();
+                        }
+                        if (exportedNote.updatedAt && exportedNote.updatedAt.toDate) {
+                            exportedNote.updatedAt = exportedNote.updatedAt.toDate().toISOString();
+                        }
+                    }
+                    
+                    return exportedNote;
+                }),
+                tags: exportTagsData.map(tag => {
+                    const exportedTag = { ...tag };
+                    delete exportedTag.userId;
+                    
+                    if (exportedTag.createdAt && exportedTag.createdAt.toDate) {
+                        exportedTag.createdAt = exportedTag.createdAt.toDate().toISOString();
+                    }
+                    
+                    return exportedTag;
+                }),
+                exportInfo: {
+                    exportedAt: new Date().toISOString(),
+                    totalNotes: exportNotesData.length,
+                    totalTags: exportTagsData.length,
+                    format: exportFormat,
+                    version: '1.0'
+                }
+            };
+        } else {
+            dataToExport = exportNotesData.map(note => {
+                const exportedNote = { ...note };
+                
+                // Очищаем Firebase-specific поля
+                delete exportedNote.userId;
+                
+                if (!withTimestamps) {
+                    delete exportedNote.createdAt;
+                    delete exportedNote.updatedAt;
+                }
+                
+                // Конвертируем Timestamp в Date если нужно
+                if (withTimestamps) {
+                    if (exportedNote.createdAt && exportedNote.createdAt.toDate) {
+                        exportedNote.createdAt = exportedNote.createdAt.toDate().toISOString();
+                    }
+                    if (exportedNote.updatedAt && exportedNote.updatedAt.toDate) {
+                        exportedNote.updatedAt = exportedNote.updatedAt.toDate().toISOString();
+                    }
+                }
+                
+                return exportedNote;
+            });
+        }
+        
+        // Форматируем JSON
+        let jsonString;
+        if (exportFormat === 'json_min') {
+            jsonString = JSON.stringify(dataToExport);
+        } else {
+            jsonString = JSON.stringify(dataToExport, null, 2);
+        }
+        
+        // Создаем и скачиваем файл
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `notes_export_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        exportStatus.innerHTML = `
+            <div style="color: #4caf50;">
+                <i class="fas fa-check-circle"></i> Экспорт завершен! Файл скачан.
+            </div>
+        `;
+        
+        // Закрываем окно через 2 секунды
+        setTimeout(() => {
+            closeExportModal();
+        }, 2000);
+        
+    } catch (error) {
+        console.error('Ошибка экспорта:', error);
+        exportStatus.innerHTML = `
+            <div style="color: #f44336;">
+                <i class="fas fa-exclamation-circle"></i> Ошибка экспорта: ${error.message}
+            </div>
+        `;
+    }
+}
+
+// Экспорт функций
+window.showImportNotes = showImportNotes;
+window.showExportNotes = showExportNotes;
+window.closeImportModal = closeImportModal;
+window.closeExportModal = closeExportModal;
+window.processImport = processImport;
+window.exportNotes = exportNotes;
+window.handleFileSelect = handleFileSelect;// Модуль работы с заметками
+function initNotesModule() {
+    console.log('Модуль заметок инициализирован');
+	setupRatingSelector();
+}
+
+// Настройка селектора оценки
+function setupRatingSelector() {
+    const container = document.getElementById('ratingSelector');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    // Создаем опции от 0 до 5
+    for (let i = 0; i <= 5; i++) {
+        const option = document.createElement('div');
+        option.className = 'rating-option';
+        option.dataset.value = i;
+        //option.textContent = i === 0 ? 'Без оценки' : i;
+        option.onclick = () => selectRating(i);
+        container.appendChild(option);
+    }
+}
+
+// Выбор оценки
+function selectRating(value) {
+    const state = window.appState;
+    state.setSelectedRating(value);
+    
+    // Обновляем UI
+    document.querySelectorAll('.rating-option').forEach(option => {
+        if (parseInt(option.dataset.value) === value) {
+            option.classList.add('selected');
+        } else {
+            option.classList.remove('selected');
+        }
+    });
+}
+
+// Подписка на заметки
+function subscribeToNotes() {
+    const state = window.appState;
+    
+    if (!state.getCurrentUser() || state.unsubscribeNotes) return;
+    
+    let query = state.db.collection('users').doc(state.getCurrentUser().uid)
+        .collection('notes');
+    
+    // Применяем фильтр по тегу если есть
+    const filterTag = state.getCurrentFilterTag();
+    if (filterTag) {
+        query = query.where('tagsArray', 'array-contains', filterTag);
+    }
+    
+    const unsubscribe = query
+        .orderBy('updatedAt', 'desc')
+        .onSnapshot(snapshot => {
+            const notes = [];
+             snapshot.forEach(doc => {
+                const data = doc.data();
+                notes.push({
+                    id: doc.id,
+                    ...data,
+                    // Обеспечиваем, что rating всегда есть и является числом
+                    rating: typeof data.rating === 'number' ? data.rating : 0
+                });
+            });
+            
+            console.log('Заметки загружены:', notes.length, 'штук');
+            console.log('Доступные теги:', state.getAllTags().length, 'штук');
+            
+            // Рендерим заметки
+            renderNotes(notes);
+            
+        }, error => {
+            console.error('Ошибка загрузки заметок:', error);
+            if (error.code === 'failed-precondition' && filterTag) {
+                document.getElementById('notesContainer').innerHTML = `
+                    <div style="grid-column: 1 / -1; text-align: center; padding: 48px; color: #666;">
+                        <p>Для фильтрации по тегам требуется создать индекс.</p>
+                        <button onclick="clearFilter()" class="btn-secondary" style="margin-top: 16px;">
+                            Показать все заметки
+                        </button>
+                    </div>
+                `;
+            }
+        });
+    
+    state.setUnsubscribeNotes(() => unsubscribe());
+}
+
+// Открыть модальное окно заметки
+async function openNoteModal(note = null) {
+    const state = window.appState;
+    
+    state.setCurrentNoteId(note ? note.id : null);
+    state.setSelectedNoteTags(note ? [...(note.tagsArray || [])] : []);
+	
+	// Устанавливаем оценку (по умолчанию 0 если не указана)
+    const rating = note && typeof note.rating === 'number' ? note.rating : 0;
+    state.setSelectedRating(rating);
+    
+    document.getElementById('modalTitle').textContent = 
+        note ? 'Редактировать заметку' : 'Новая заметка';
+    document.getElementById('modalNoteTitle').value = note?.title || '';
+    document.getElementById('modalNoteBody').value = note?.body || '';
+    document.getElementById('modalNoteSubbody').value = note?.subbody || '';
+    document.getElementById('modalNoteNotes').value = note?.notes || '';
+    
+    document.getElementById('deleteNoteBtn').style.display = 
+        note ? 'block' : 'none';
+    
+    // Обновляем список доступных тегов
+    renderAvailableTags();
+	
+	// Обновляем селектор оценки
+    updateRatingSelector(rating);
+    
+    document.getElementById('noteModal').style.display = 'flex';
+}
+
+// Обновить селектор оценки
+function updateRatingSelector(rating) {
+    document.querySelectorAll('.rating-option').forEach(option => {
+        const value = parseInt(option.dataset.value);
+        if (value === rating) {
+            option.classList.add('selected');
+        } else {
+            option.classList.remove('selected');
+        }
+    });
+}
+
+// Закрыть модальное окно заметки
+function closeNoteModal() {
+    document.getElementById('noteModal').style.display = 'none';
+    resetNoteForm();
+}
+
+// Сброс формы заметки
+function resetNoteForm() {
+    const state = window.appState;
+    
+    state.setCurrentNoteId(null);
+    state.setSelectedNoteTags([]);
+    
+    document.getElementById('modalNoteTitle').value = '';
+    document.getElementById('modalNoteBody').value = '';
+    document.getElementById('modalNoteSubbody').value = '';
+    document.getElementById('modalNoteNotes').value = '';
+    document.getElementById('availableTags').innerHTML = '';
+    document.getElementById('deleteNoteBtn').style.display = 'none';
+	
+	// Сброс селектора оценки
+    updateRatingSelector(0);
+}
+
+// Рендеринг доступных тегов в форме заметки
+function renderAvailableTags() {
+    const state = window.appState;
+    const container = document.getElementById('availableTags');
+    const allTags = state.getAllTags();
+    const selectedTags = state.getSelectedNoteTags();
+    
+    if (allTags.length === 0) {
+        container.innerHTML = '<div style="color: #999; padding: 20px; text-align: center;">Нет созданных тегов</div>';
+        return;
+    }
+    
+    container.innerHTML = allTags.map(tag => {
+        const isSelected = selectedTags.includes(tag.name);
+        return `
+            <div class="tag-selector-item ${isSelected ? 'selected' : ''}" 
+                 style="background: ${tag.color}"
+                 onclick="toggleTagSelection('${tag.name}')"
+                 title="${tag.name}">
+                ${tag.name}
+                <!-- УБРАН СИМВОЛ ГАЛОЧКИ -->
+            </div>
+        `;
+    }).join('');
+}
+
+// Переключение выбора тега
+function toggleTagSelection(tagName) {
+    const state = window.appState;
+    let selectedTags = state.getSelectedNoteTags();
+    
+    if (selectedTags.includes(tagName)) {
+        selectedTags = selectedTags.filter(tag => tag !== tagName);
+    } else {
+        selectedTags.push(tagName);
+    }
+    
+    state.setSelectedNoteTags(selectedTags);
+    renderAvailableTags();
+}
+
+// Сохранить заметку
+async function saveNote() {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    
+    if (!currentUser) return;
+    
+    const title = document.getElementById('modalNoteTitle').value.trim();
+    const body = document.getElementById('modalNoteBody').value.trim();
+    const subbody = document.getElementById('modalNoteSubbody').value.trim();
+    const notes = document.getElementById('modalNoteNotes').value.trim();
+	const rating = state.getSelectedRating() || 0;
+    
+    if (!title) {
+        showAlert('Введите заголовок заметки');
+        return;
+    }
+    
+    const noteData = {
+        title,
+        body,
+        subbody,
+        notes,
+		rating: rating, // Добавляем оценку
+        tagsArray: state.getSelectedNoteTags(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        userId: currentUser.uid
+    };
+    
+    try {
+        showLoading();
+        
+        const currentNoteId = state.getCurrentNoteId();
+        if (currentNoteId) {
+            // Обновление
+            await state.db.collection('users').doc(currentUser.uid)
+                .collection('notes').doc(currentNoteId).update(noteData);
+        } else {
+            // Создание
+            noteData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+            await state.db.collection('users').doc(currentUser.uid)
+                .collection('notes').add(noteData);
+        }
+        
+        hideLoading();
+        closeNoteModal();
+    } catch (error) {
+        hideLoading();
+        console.error('Ошибка сохранения:', error);
+        showAlert('Ошибка сохранения: ' + error.message);
+    }
+	
+	await updateNotesCounter();
+}
+
+// Показать подтверждение удаления заметки
+function showDeleteNoteConfirm() {
+    console.log('Удаление заметки');
+    showConfirm('Удалить эту заметку?', deleteCurrentNote);
+}
+
+// Удалить заметку
+async function deleteCurrentNote() {
+    const state = window.appState;
+    const currentNoteId = state.getCurrentNoteId();
+    const currentUser = state.getCurrentUser();
+    
+    if (!currentNoteId || !currentUser) return;
+    
+    try {
+        console.log('Начинаем удаление заметки:', currentNoteId);
+        showLoading();
+        
+        await state.db.collection('users').doc(currentUser.uid)
+            .collection('notes')
+            .doc(currentNoteId)
+            .delete();
+        
+        console.log('Заметка успешно удалена');
+        hideLoading();
+        closeNoteModal();
+        showAlert('Заметка удалена');
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Ошибка удаления:', error);
+        showAlert('Ошибка удаления: ' + error.message);
+    }
+	
+	await updateNotesCounter();
+}
+
+// Экспорт функций
+window.openNoteModal = openNoteModal;
+window.closeNoteModal = closeNoteModal;
+window.saveNote = saveNote;
+window.showDeleteNoteConfirm = showDeleteNoteConfirm;
+window.deleteCurrentNote = deleteCurrentNote;
+window.toggleTagSelection = toggleTagSelection;
+window.subscribeToNotes = subscribeToNotes;// Инициализация модуля настроек
+function initSettingsModule() {
+    const settingsBtn = document.getElementById('settingsBtn');
+    const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+    const closeBtn = document.querySelector('.close-btn[data-modal-id="settingsModal"]');
+    const cancelBtn = document.querySelector('.btn-secondary[data-modal-id="settingsModal"]');
+    
+    if (settingsBtn) {
+        settingsBtn.addEventListener('click', () => {
+            openSettingsModal();
+        });
+    }
+    
+    if (saveSettingsBtn) {
+        saveSettingsBtn.addEventListener('click', saveSettings);
+    }
+    
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => closeModal('settingsModal'));
+    }
+    
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => closeModal('settingsModal'));
+    }
+}
+
+// Открытие модального окна настроек
+async function openSettingsModal() {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    
+    if (!currentUser) return;
+    
+    try {
+        // Загружаем настройки пользователя
+        const userDoc = await state.db.collection('users').doc(currentUser.uid).get();
+        
+        if (userDoc.exists) {
+            const userData = userDoc.data();
+            console.log(userData);
+            // Загружаем статистику
+			const notesQuery = userData.totalNotes;
+			const tagsQuery = userData.totalTags;
+            /*const notesQuery = await state.db.collection('users').doc(currentUser.uid)
+                .collection('notes')
+                .get();
+            
+            const tagsQuery = await state.db.collection('users').doc(currentUser.uid)
+                .collection('tags')
+                .get();
+            */
+            // Обновляем счетчики в интерфейсе
+            document.getElementById('settingsTotalNotesCount').textContent = notesQuery;
+            document.getElementById('settingsTotalTagsCount').textContent = tagsQuery;
+            
+            // Загружаем сохраненные настройки
+            const cardsPerSession = userData.cardsPerSession || '20';
+            const cardsPerSessionSelect = document.getElementById('cardsPerSessionSelect');
+            if (cardsPerSessionSelect) {
+                cardsPerSessionSelect.value = cardsPerSession;
+            }
+        }
+        
+        openModal('settingsModal');
+        
+    } catch (error) {
+        console.error('Ошибка загрузки настроек:', error);
+        showAlert('Ошибка загрузки настроек');
+    }
+}
+
+// Сохранение настроек
+async function saveSettings() {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    
+    if (!currentUser) return;
+    
+    try {
+        const cardsPerSessionSelect = document.getElementById('cardsPerSessionSelect');
+        const cardsPerSession = cardsPerSessionSelect ? cardsPerSessionSelect.value : '20';
+        
+        // Загружаем текущие данные пользователя
+        const userDocRef = state.db.collection('users').doc(currentUser.uid);
+        const userDoc = await userDocRef.get();
+        
+        const userData = userDoc.exists ? userDoc.data() : {};
+        
+        // Обновляем настройки
+        const updatedData = {
+            ...userData,
+            cardsPerSession,
+            updatedAt: new Date().toISOString()
+        };
+        
+        await userDocRef.set(updatedData, { merge: true });
+        
+        showAlert('Настройки сохранены');
+        closeModal('settingsModal');
+        
+    } catch (error) {
+        console.error('Ошибка сохранения настроек:', error);
+        showAlert('Ошибка сохранения настроек');
+    }
+}
+
+// Функция для обновления счетчиков в Firestore
+async function updateUserCounters() {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    
+    if (!currentUser) return;
+    
+    try {
+        // Получаем текущее количество заметок и тегов
+        const notesQuery = await state.db.collection('users').doc(currentUser.uid)
+            .collection('notes')
+            .get();
+        
+        const tagsQuery = await state.db.collection('users').doc(currentUser.uid)
+            .collection('tags')
+            .get();
+        
+        // Обновляем документ пользователя
+        await state.db.collection('users').doc(currentUser.uid).set({
+            totalNotes: notesQuery.size,
+            totalTags: tagsQuery.size,
+            updatedAt: new Date().toISOString()
+        }, { merge: true });
+        
+        console.log('Счетчики обновлены:', {
+            notes: notesQuery.size,
+            tags: tagsQuery.size
+        });
+        
+    } catch (error) {
+        console.error('Ошибка обновления счетчиков:', error);
+    }
+}
+
+// Функции для обновления счетчиков при изменениях
+async function updateNotesCounter() {
+    await updateUserCounters();
+}
+
+async function updateTagsCounter() {
+    await updateUserCounters();
+}// Модуль синхронизации
+function initSyncModule() {
+    console.log('Модуль синхронизации инициализирован');
+}
+
+// Показать подтверждение синхронизации
+function showSyncConfirm() {
+    const changesCount = window.appState.getLocalStore().pendingChanges.length;
+    document.getElementById('localChangesCount').textContent = changesCount;
+    
+    if (changesCount === 0) {
+        // Если нет изменений, просто синхронизируем (загружаем свежие данные)
+        performSync();
+        return;
+    }
+    
+    document.getElementById('syncConfirmModal').style.display = 'flex';
+}
+
+// Закрыть подтверждение синхронизации
+function closeSyncConfirm() {
+    document.getElementById('syncConfirmModal').style.display = 'none';
+}
+
+// Выполнить синхронизацию
+async function performSync() {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    const localStore = state.getLocalStore();
+    
+    if (!currentUser) return;
+    
+    closeSyncConfirm();
+    showSyncProgress(true);
+    
+    try {
+        // 1. Сначала загружаем свежие данные с сервера
+        await loadAllDataFromFirebase();
+        
+        // 2. Затем применяем локальные изменения
+        const success = await applyPendingChanges();
+        
+        // 3. Обновляем локальное хранилище
+        localStore.lastSync = Date.now();
+        localStore.save(currentUser.uid);
+        
+        // 4. Обновляем UI
+        state.renderNotesFromLocalStore();
+        state.updateSyncStatus();
+        
+        if (success) {
+            showAlert('Синхронизация завершена успешно');
+        } else {
+            showAlert('Синхронизация завершена с ошибками');
+        }
+        
+    } catch (error) {
+        console.error('Ошибка синхронизации:', error);
+        showAlert('Ошибка синхронизации: ' + error.message);
+    } finally {
+        showSyncProgress(false);
+    }
+}
+
+// Показать/скрыть индикатор прогресса синхронизации
+function showSyncProgress(show) {
+    const progressEl = document.getElementById('syncProgress');
+    const syncBtn = document.getElementById('syncBtn');
+    
+    if (show) {
+        progressEl.style.display = 'block';
+        syncBtn.disabled = true;
+        syncBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    } else {
+        progressEl.style.display = 'none';
+        syncBtn.disabled = false;
+        syncBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
+    }
+}
+
+// Загрузить все данные из Firebase
+async function loadAllDataFromFirebase() {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    const localStore = state.getLocalStore();
+    
+    showSyncProgress(true);
+    
+    try {
+        // Загружаем заметки
+        const notesSnapshot = await state.db.collection('users').doc(currentUser.uid)
+            .collection('notes')
+            .orderBy('updatedAt', 'desc')
+            .get();
+        
+        const notes = [];
+        notesSnapshot.forEach(doc => {
+            notes.push({
+                id: doc.id,
+                ...doc.data()
+            });
+        });
+        
+        // Загружаем теги
+        const tagsSnapshot = await state.db.collection('users').doc(currentUser.uid)
+            .collection('tags')
+            .orderBy('name')
+            .get();
+        
+        const tags = [];
+        tagsSnapshot.forEach(doc => {
+            tags.push({
+                id: doc.id,
+                ...doc.data()
+            });
+        });
+        
+        // Обновляем локальное хранилище
+        localStore.notes = notes;
+        localStore.tags = tags;
+        
+        console.log('Данные загружены из Firebase:', {
+            notes: notes.length,
+            tags: tags.length
+        });
+        
+        return true;
+        
+    } catch (error) {
+        console.error('Ошибка загрузки данных:', error);
+        throw error;
+    }
+}
+
+// Применить ожидающие изменения
+async function applyPendingChanges() {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    const localStore = state.getLocalStore();
+    const pendingChanges = [...localStore.pendingChanges];
+    
+    let successCount = 0;
+    let errorCount = 0;
+    
+    for (const change of pendingChanges) {
+        try {
+            switch (change.type) {
+                case 'CREATE_NOTE':
+                    await applyCreateNote(change.data);
+                    break;
+                case 'UPDATE_NOTE':
+                    await applyUpdateNote(change.data);
+                    break;
+                case 'DELETE_NOTE':
+                    await applyDeleteNote(change.data);
+                    break;
+                case 'CREATE_TAG':
+                    await applyCreateTag(change.data);
+                    break;
+                case 'DELETE_TAG':
+                    await applyDeleteTag(change.data);
+                    break;
+            }
+            
+            localStore.removePendingChange(change.id);
+            successCount++;
+            
+        } catch (error) {
+            console.error('Ошибка применения изменения:', error, change);
+            errorCount++;
+            
+            // Если ошибка критическая, оставляем изменение для повторной попытки
+            if (!isTemporaryError(error)) {
+                localStore.removePendingChange(change.id);
+            }
+        }
+    }
+    
+    // Сохраняем изменения в localStorage
+    localStore.save(currentUser.uid);
+    
+    console.log(`Синхронизация изменений: ${successCount} успешно, ${errorCount} с ошибками`);
+    return errorCount === 0;
+}
+
+// Проверка временной ошибки
+function isTemporaryError(error) {
+    // Ошибки сети, таймауты и т.д. считаем временными
+    return error.code === 'unavailable' || 
+           error.code === 'deadline-exceeded' ||
+           error.message.includes('network');
+}
+
+// Применить создание заметки
+async function applyCreateNote(noteData) {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    
+    // Удаляем временный ID если есть
+    const { tempId, ...data } = noteData;
+    
+    // Добавляем серверные метки времени
+    const finalData = {
+        ...data,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    
+    const docRef = await state.db.collection('users').doc(currentUser.uid)
+        .collection('notes')
+        .add(finalData);
+    
+    // Обновляем локальную заметку с настоящим ID
+    const localNoteIndex = localStore.notes.findIndex(n => n.id === tempId);
+    if (localNoteIndex !== -1) {
+        localStore.notes[localNoteIndex] = {
+            ...localStore.notes[localNoteIndex],
+            id: docRef.id,
+            tempId: undefined
+        };
+    }
+}
+
+// Применить обновление заметки
+async function applyUpdateNote(updateData) {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    
+    const { id, ...data } = updateData;
+    
+    await state.db.collection('users').doc(currentUser.uid)
+        .collection('notes')
+        .doc(id)
+        .update({
+            ...data,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+}
+
+// Применить удаление заметки
+async function applyDeleteNote(deleteData) {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    
+    await state.db.collection('users').doc(currentUser.uid)
+        .collection('notes')
+        .doc(deleteData.id)
+        .delete();
+    
+    // Удаляем из локального хранилища
+    localStore.notes = localStore.notes.filter(n => n.id !== deleteData.id);
+}
+
+// Применить создание тега
+async function applyCreateTag(tagData) {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    
+    const { tempId, ...data } = tagData;
+    
+    const finalData = {
+        ...data,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    
+    const docRef = await state.db.collection('users').doc(currentUser.uid)
+        .collection('tags')
+        .add(finalData);
+    
+    // Обновляем локальный тег
+    const localTagIndex = localStore.tags.findIndex(t => t.id === tempId);
+    if (localTagIndex !== -1) {
+        localStore.tags[localTagIndex] = {
+            ...localStore.tags[localTagIndex],
+            id: docRef.id,
+            tempId: undefined
+        };
+    }
+}
+
+// Применить удаление тега
+async function applyDeleteTag(deleteData) {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    
+    await state.db.collection('users').doc(currentUser.uid)
+        .collection('tags')
+        .doc(deleteData.id)
+        .delete();
+    
+    // Удаляем из локального хранилища
+    localStore.tags = localStore.tags.filter(t => t.id !== deleteData.id);
+}
+
+// Экспорт функций
+window.showSyncConfirm = showSyncConfirm;
+window.closeSyncConfirm = closeSyncConfirm;
+window.performSync = performSync;
+window.loadAllDataFromFirebase = loadAllDataFromFirebase;// Модуль работы с тегами
+function initTagsModule() {
+    console.log('Модуль тегов инициализирован');
+}
+
+// Загрузка тегов пользователя
+async function loadUserTags() {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    
+    if (!currentUser) return;
+    
+    if (state.unsubscribeTags) {
+        state.unsubscribeTags();
+    }
+    
+    const unsubscribe = state.db.collection('users').doc(currentUser.uid)
+        .collection('tags')
+        .orderBy('name')
+        .onSnapshot(async (snapshot) => {
+            const tags = [];
+            snapshot.forEach(doc => {
+                tags.push({
+                    id: doc.id,
+                    ...doc.data()
+                });
+            });
+            
+            // Подсчитываем использование для каждого тега
+            const tagsWithUsage = await Promise.all(
+                tags.map(async (tag) => {
+                    try {
+                        const notesQuery = await state.db.collection('users').doc(currentUser.uid)
+                            .collection('notes')
+                            .where('tagsArray', 'array-contains', tag.name)
+                            .get();
+                        
+                        return {
+                            ...tag,
+                            usageCount: notesQuery.size
+                        };
+                    } catch (error) {
+                        console.error('Ошибка подсчета тега:', error);
+                        return { ...tag, usageCount: 0 };
+                    }
+                })
+            );
+            
+            state.setAllTags(tagsWithUsage);
+            console.log('Теги загружены:', tagsWithUsage.length, 'штук');
+            
+            // Обновляем UI тегов
+            updateTagsUI();
+            
+            // ПЕРЕРИСОВЫВАЕМ ЗАМЕТКИ с правильными цветами тегов
+            refreshNotesDisplay();
+            
+        }, error => console.error('Ошибка загрузки тегов:', error));
+    
+    state.setUnsubscribeTags(() => unsubscribe());
+}
+
+// Функция для перерисовки заметок
+function refreshNotesDisplay() {
+    const state = window.appState;
+    
+    // Если есть активная подписка на заметки, перезапускаем ее
+    if (state.unsubscribeNotes) {
+        // Сначала отписываемся
+        state.unsubscribeNotes();
+        state.setUnsubscribeNotes(null);
+        
+        // Затем подписываемся заново
+        setTimeout(() => {
+            subscribeToNotes();
+        }, 100);
+    }
+}
+
+// Обновление UI тегов
+function updateTagsUI() {
+    const state = window.appState;
+    
+    if (document.getElementById('tagsModal').style.display === 'flex') {
+        renderTagsGrid();
+    }
+    
+    if (document.getElementById('noteModal').style.display === 'flex') {
+        renderAvailableTags();
+    }
+    
+    const currentFilterTag = state.getCurrentFilterTag();
+    if (currentFilterTag) {
+        const tagExists = state.getAllTags().find(tag => tag.name === currentFilterTag);
+        if (!tagExists) {
+            clearFilter();
+        }
+    }
+}
+
+// Открыть модальное окно тегов
+function openTagsModal() {
+    renderTagsGrid();
+    document.getElementById('tagsModal').style.display = 'flex';
+}
+
+// Закрыть модальное окно тегов
+function closeTagsModal() {
+    document.getElementById('tagsModal').style.display = 'none';
+}
+
+// Открыть модальное окно добавления тега
+function openAddTagModal() {
+    document.getElementById('tagsModal').style.display = 'none';
+    document.getElementById('addTagModal').style.display = 'flex';
+}
+
+// Закрыть модальное окно добавления тега
+function closeAddTagModal() {
+    document.getElementById('addTagModal').style.display = 'none';
+    document.getElementById('newTagName').value = '';
+    document.getElementById('tagsModal').style.display = 'flex';
+}
+
+// Рендеринг сетки тегов
+function renderTagsGrid() {
+    const state = window.appState;
+    const container = document.getElementById('tagsList');
+    const allTags = state.getAllTags();
+    
+    if (allTags.length === 0) {
+        container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: #999; padding: 48px;">Нет созданных тегов</div>';
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    allTags.forEach(tag => {
+        const tagElement = document.createElement('div');
+        tagElement.className = 'tag-chip';
+        tagElement.style.background = tag.color;
+        
+        const tagName = document.createElement('div');
+        tagName.className = 'tag-chip-name';
+        tagName.textContent = tag.name;
+        
+        const tagUsage = document.createElement('div');
+        tagUsage.className = 'tag-chip-usage';
+        tagUsage.textContent = `Используется в ${tag.usageCount} заметках`;
+        
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'tag-chip-delete';
+        deleteBtn.title = 'Удалить тег';
+        deleteBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
+        
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            showDeleteTagConfirm(tag.id, tag.name);
+        });
+        
+        tagElement.addEventListener('click', (e) => {
+            if (e.target !== deleteBtn && !deleteBtn.contains(e.target)) {
+                filterByTagFromModal(tag.name);
+            }
+        });
+        
+        tagElement.appendChild(tagName);
+        tagElement.appendChild(tagUsage);
+        tagElement.appendChild(deleteBtn);
+        container.appendChild(tagElement);
+    });
+}
+
+// Показать подтверждение удаления тега
+function showDeleteTagConfirm(tagId, tagName) {
+	console.log('Удаление тега');
+    showConfirm('Удалить этот тег?', () => deleteTag(tagId, tagName));
+}
+
+// Удалить тег
+async function deleteTag(tagId, tagName) {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    
+    if (!tagId || !currentUser) return;
+    
+    try {
+        showLoading();
+        
+        await state.db.collection('users').doc(currentUser.uid)
+            .collection('tags')
+            .doc(tagId)
+            .delete();
+        
+        hideLoading();
+        showAlert(`Тег "${tagName}" удален`);
+        
+    } catch (error) {
+        hideLoading();
+        console.error('Ошибка удаления тега:', error);
+        showAlert('Ошибка удаления тега: ' + error.message);
+    }
+	
+	await updateTagsCounter();
+}
+
+// Добавить новый тег
+async function addNewTag() {
+    const state = window.appState;
+    const currentUser = state.getCurrentUser();
+    const allTags = state.getAllTags();
+    const selectedColor = state.getSelectedColor();
+    
+    const name = document.getElementById('newTagName').value.trim();
+    
+    if (!name) {
+        showAlert('Введите название тега');
+        return;
+    }
+    
+    if (name.length > 20) {
+        showAlert('Название тега не должно превышать 20 символов');
+        return;
+    }
+    
+    const existingTag = allTags.find(tag => tag.name.toLowerCase() === name.toLowerCase());
+    if (existingTag) {
+        showAlert('Тег с таким названием уже существует');
+        return;
+    }
+    
+    try {
+        const tagData = {
+            name: name,
+            color: selectedColor,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            userId: currentUser.uid
+        };
+        
+        showLoading();
+        await state.db.collection('users').doc(currentUser.uid)
+            .collection('tags').add(tagData);
+        
+        hideLoading();
+        closeAddTagModal();
+    } catch (error) {
+        hideLoading();
+        console.error('Ошибка создания тега:', error);
+        showAlert('Ошибка создания тега: ' + error.message);
+    }
+	
+	await updateTagsCounter();
+}
+
+// Фильтрация по тегу из модального окна
+function filterByTagFromModal(tagName) {
+    filterByTag(tagName);
+    closeTagsModal();
+}
+
+// Фильтр по тегу
+function filterByTag(tagName) {
+    const state = window.appState;
+    const allTags = state.getAllTags();
+    
+    state.setCurrentFilterTag(tagName);
+    
+    const tag = allTags.find(t => t.name === tagName);
+    const tagColor = tag ? tag.color : '#666';
+    
+    document.getElementById('activeFilter').style.display = 'flex';
+    document.getElementById('filterTag').textContent = tagName;
+    document.getElementById('filterTag').style.background = tagColor;
+    
+    if (state.unsubscribeNotes) {
+        state.unsubscribeNotes();
+        state.setUnsubscribeNotes(null);
+    }
+    subscribeToNotes();
+}
+
+// Очистить фильтр
+function clearFilter() {
+    const state = window.appState;
+    
+    state.setCurrentFilterTag(null);
+    document.getElementById('activeFilter').style.display = 'none';
+    
+    if (state.unsubscribeNotes) {
+        state.unsubscribeNotes();
+        state.setUnsubscribeNotes(null);
+    }
+    subscribeToNotes();
+}
+
+// Экспорт функций
+window.openTagsModal = openTagsModal;
+window.closeTagsModal = closeTagsModal;
+window.openAddTagModal = openAddTagModal;
+window.closeAddTagModal = closeAddTagModal;
+window.addNewTag = addNewTag;
+window.filterByTag = filterByTag;
+window.clearFilter = clearFilter;
+window.filterByTagFromModal = filterByTagFromModal;
+window.loadUserTags = loadUserTags;
+window.updateTagsUI = updateTagsUI;// Модуль UI и попапов
+function initUIModule() {
+    console.log('Модуль UI инициализирован');
+}
+
+// Аватар
+function stringToColor(string) {
+            let hash = 0;
+            for (let i = 0; i < string.length; i++) {
+                hash = string.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            
+            // Используем только насыщенные цвета (убираем слишком светлые и темные)
+            const hue = hash % 360;
+            const saturation = 70 + (hash % 30); // 70-100%
+            const lightness = 50 + (hash % 20);  // 50-70%
+            
+            return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+        }
+        
+        function generateAvatar(email) {
+            const firstLetter = email.charAt(0).toUpperCase();
+            const color = stringToColor(email);
+            
+            const avatar = document.createElement('div');
+            avatar.className = 'avatar';
+            avatar.style.backgroundColor = color;
+            avatar.textContent = firstLetter;
+            
+            return avatar;
+        }
+
+// Система попапов
+let confirmCallback = null;
+
+// Показать попап подтверждения
+function showConfirm(message, callback) {
+    console.log('Показываем подтверждение:', message);
+    document.getElementById('popupMessage').textContent = message;
+    document.getElementById('confirmPopup').style.display = 'flex';
+    confirmCallback = callback;
+}
+
+// Обработчик кнопки "Да"
+function confirmYes() {
+    console.log('Нажата кнопка "Да"');
+    
+    if (confirmCallback) {
+        console.log('Выполняем колбэк...');
+        try {
+            confirmCallback();
+            console.log('Колбэк выполнен успешно');
+        } catch (error) {
+            console.error('Ошибка в колбэке:', error);
+        }
+    }
+    
+    document.getElementById('confirmPopup').style.display = 'none';
+    confirmCallback = null;
+}
+
+// Обработчик кнопки "Нет"
+function confirmNo() {
+    console.log('Нажата кнопка "Нет"');
+    document.getElementById('confirmPopup').style.display = 'none';
+    confirmCallback = null;
+}
+
+// Показать попап уведомления
+function showAlert(message) {
+    console.log('Показываем уведомление:', message);
+    document.getElementById('alertMessage').textContent = message;
+    document.getElementById('alertPopup').style.display = 'flex';
+}
+
+// Скрыть попап уведомления
+function closeAlert() {
+    document.getElementById('alertPopup').style.display = 'none';
+}
+
+// Открытие модального окна
+function openModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+// Закрыть модальное окно
+function closeModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
+}
+
+// Закрыть все модальные окна
+function closeAllModals() {
+    ['authModal', 'noteModal', 'tagsModal', 'addTagModal', 'confirmPopup', 'alertPopup']
+        .forEach(modalId => closeModal(modalId));
+}
+
+// Показать загрузку
+function showLoading() {
+    document.getElementById('loading').style.display = 'flex';
+}
+
+// Скрыть загрузку
+function hideLoading() {
+    document.getElementById('loading').style.display = 'none';
+}
+
+// Показать сообщение авторизации
+function showAuthMessage(message, type) {
+    const el = document.getElementById('authMessage');
+    el.textContent = message;
+    el.className = type === 'success' ? 'message-success' : 'message-error';
+}
+
+// Экспорт функций
+window.showConfirm = showConfirm;
+window.confirmYes = confirmYes;
+window.confirmNo = confirmNo;
+window.showAlert = showAlert;
+window.closeAlert = closeAlert;
+window.closeModal = closeModal;
+window.closeAllModals = closeAllModals;
+window.showLoading = showLoading;
+window.hideLoading = hideLoading;
+window.showAuthMessage = showAuthMessage;// Вспомогательные функции
+
+// Форматирование даты
+function formatDate(timestamp) {
+    if (!timestamp) return '';
+    
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) {
+        return `Сегодня в ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    } else if (diffDays === 1) {
+        return `Вчера в ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    } else if (diffDays < 7) {
+        return `${diffDays} дн. назад`;
+    } else {
+        return date.toLocaleDateString('ru-RU', {
+            day: 'numeric',
+            month: 'short',
+            year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+        });
+    }
+}
+
+// Функция для получения цвета тега по умолчанию
+function getDefaultTagColor(tagName) {
+    let hash = 0;
+    for (let i = 0; i < tagName.length; i++) {
+        hash = tagName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    
+    const colors = [
+        '#FF6B6B', '#4ECDC4', '#FFD166', '#06D6A0',
+        '#118AB2', '#073B4C', '#7209B7', '#F72585',
+        '#FF9F1C', '#2A9D8F', '#E76F51', '#264653'
+    ];
+    
+    return colors[Math.abs(hash) % colors.length];
+}
+
+// Рендеринг заметок (исправленная версия с цветами тегов)
+function renderNotes(notes) {
+    const state = window.appState;
+    const container = document.getElementById('notesContainer');
+    const allTags = state.getAllTags();
+    
+    if (notes.length === 0) {
+        container.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; color: #999; padding: 48px;">
+                ${state.getCurrentFilterTag() ? 
+                    'Нет заметок с этим тегом' : 
+                    'Нет заметок. Создайте первую!'}
+            </div>
+        `;
+        return;
+    }
+    
+	container.innerHTML = notes.map(note => {
+        // Находим теги с их цветами
+        const noteTags = (note.tagsArray || []).map(tagName => {
+            const tag = allTags.find(t => t.name === tagName);
+            return {
+                name: tagName,
+                color: tag ? tag.color : getDefaultTagColor(tagName)
+            };
+        });
+        
+        // Получаем оценку (по умолчанию 0)
+        const rating = typeof note.rating === 'number' ? note.rating : 0;
+        const ratingClass = `rating-${rating}`;
+        
+        return `
+            <div class="note-card" onclick="openNoteModal(${JSON.stringify(note).replace(/"/g, '&quot;')})">
+                <!-- Цветная полоса оценки -->
+                <div class="note-rating-indicator ${ratingClass}"></div>
+                
+                <div class="note-header">
+                    <div class="note-title">${note.title || 'Без названия'}</div>
+                </div>
+                ${note.body ? `<div class="note-text">${note.body}</div>` : ''}
+                ${note.subbody ? `<div class="note-text">${note.subbody}</div>` : ''}
+                ${note.notes ? `<div class="note-text">${note.notes}</div>` : ''}
+                
+                ${noteTags.length > 0 ? `
+                    <div class="note-tags">
+                        ${noteTags.map(tag => `
+                            <button class="tag" 
+                                    onclick="event.stopPropagation(); filterByTag('${tag.name}')"
+                                    style="background: ${tag.color}">
+                                ${tag.name}
+                            </button>
+                        `).join('')}
+                    </div>
+                ` : ''}
+                
+                <!-- Отображение оценки (необязательно, можно убрать) -->
+                ${rating > 0 ? `
+                    <div class="note-rating-display">
+                        <span style="font-weight: bold; color: #666;">Оценка: ${rating}/5</span>
+                    </div>
+                ` : ''}
+                
+                <div class="note-date">
+                    ${formatDate(note.updatedAt || note.createdAt)}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Экспорт функций
+window.formatDate = formatDate;
+window.getDefaultTagColor = getDefaultTagColor;
+window.renderNotes = renderNotes;<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimal Notes</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Хедер -->
+    <header id="header" style="display: none;">
+        <div class="user-info">
+			<div id="avatarContainer">
+			</div>
+			<span id="userEmail"></span>
+            <div class="header-actions">
+				<button id="settingsBtn" class="btn btn-icon" aria-label="Настройки">
+					<i class="fas fa-gear"></i>
+				</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Основной контент -->
+    <main id="main" style="display: none;">
+        <div class="controls">
+            <button onclick="openNoteModal()" class="btn-primary">
+                <i class="fas fa-plus"></i> Новая заметка
+            </button>
+            <div class="controls-right">
+                <div id="activeFilter" class="active-filter" style="display: none;">
+                    <span id="filterTag" class="tag-badge"></span>
+                    <button onclick="clearFilter()" class="btn-clear">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <button onclick="openTagsModal()" class="btn-secondary" title="Управление тегами">
+                    <i class="fas fa-tags"></i>
+                </button>
+            </div>
+        </div>
+
+        <div id="notesContainer" class="notes-grid"></div>
+    </main>
+
+    <!-- Модальное окно авторизации -->
+    <div id="authModal" class="modal" onclick="closeModalOnOutsideClick(event, 'authModal')">
+        <div class="modal-content">
+            <h2>Вход в систему</h2>
+            <div class="form-group">
+                <input type="email" id="email" placeholder="Email" autocomplete="email">
+            </div>
+            <div class="form-group">
+                <input type="password" id="password" placeholder="Пароль" autocomplete="current-password">
+            </div>
+            <div class="modal-actions">
+                <button onclick="signIn()" class="btn-primary">Войти</button>
+                <button onclick="signUp()" class="btn-secondary">Регистрация</button>
+            </div>
+            <div id="authMessage"></div>
+        </div>
+    </div>
+
+    <!-- Модальное окно заметки -->
+    <div id="noteModal" class="modal" style="display: none;" onclick="closeModalOnOutsideClick(event, 'noteModal')">
+        <div class="modal-content">
+            <h2 id="modalTitle">Новая заметка</h2>
+            <div class="form-group">
+                <input type="text" id="modalNoteTitle" placeholder="Заголовок" maxlength="200">
+            </div>
+            <div class="form-group">
+                <input type="text" id="modalNoteBody" placeholder="Текст" maxlength="200">
+            </div>
+            <div class="form-group">
+                <input type="text" id="modalNoteSubbody" placeholder="Дополнительный текст" maxlength="200">
+            </div>
+            <div class="form-group">
+                <textarea type="text" id="modalNoteNotes" placeholder="Заметки"  rows="8"></textarea>
+            </div>
+			
+			<div class="form-group">
+				<label>Оценка заметки</label>
+				<div id="ratingSelector" class="rating-selector">
+					<!-- Опции будут добавлены динамически -->
+				</div>
+			</div>
+            
+            <div class="form-group">
+                <label>Теги</label>
+                <div id="availableTags" class="tags-selector">
+                    <!-- Теги будут загружены динамически -->
+                </div>
+            </div>
+            
+            <div class="modal-actions">
+                <button onclick="saveNote()" id="saveNoteBtn" class="btn-primary">Сохранить</button>
+                <button onclick="closeNoteModal()" class="btn-secondary">Отмена</button>
+                <button onclick="showDeleteNoteConfirm()" id="deleteNoteBtn" class="btn-danger" style="display: none;">
+                    Удалить
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно управления тегами (только список) -->
+    <div id="tagsModal" class="modal" style="display: none;" onclick="closeModalOnOutsideClick(event, 'tagsModal')">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button onclick="openAddTagModal()" class="btn-primary btn-icon" title="Добавить тег">
+                    <i class="fas fa-plus"></i>
+                </button>
+                <button onclick="closeTagsModal()" class="btn-secondary btn-icon" title="Закрыть">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div id="tagsList" class="tags-grid">
+                <!-- Список тегов будет загружен динамически -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно добавления тега -->
+    <div id="addTagModal" class="modal" style="display: none;" onclick="closeModalOnOutsideClick(event, 'addTagModal')">
+        <div class="modal-content">
+            <h2>Добавить тег</h2>
+            
+            <div class="form-group">
+                <input type="text" id="newTagName" placeholder="Название тега" maxlength="20">
+            </div>
+            
+            <div class="form-group">
+                <label>Цвет тега</label>
+                <div class="color-picker">
+                    <div class="color-options">
+                        <div class="color-option" data-color="#FF6B6B" style="background: #FF6B6B;"></div>
+                        <div class="color-option" data-color="#4ECDC4" style="background: #4ECDC4;"></div>
+                        <div class="color-option" data-color="#FFD166" style="background: #FFD166;"></div>
+                        <div class="color-option" data-color="#06D6A0" style="background: #06D6A0;"></div>
+                        <div class="color-option" data-color="#118AB2" style="background: #118AB2;"></div>
+                        <div class="color-option" data-color="#073B4C" style="background: #073B4C;"></div>
+                        <div class="color-option" data-color="#7209B7" style="background: #7209B7;"></div>
+                        <div class="color-option" data-color="#F72585" style="background: #F72585;"></div>
+                        <div class="color-option" data-color="#FF9F1C" style="background: #FF9F1C;"></div>
+                        <div class="color-option" data-color="#2A9D8F" style="background: #2A9D8F;"></div>
+                        <div class="color-option" data-color="#E76F51" style="background: #E76F51;"></div>
+                        <div class="color-option" data-color="#264653" style="background: #264653;"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-actions">
+                <button onclick="addNewTag()" class="btn-primary">Добавить</button>
+                <button onclick="closeAddTagModal()" class="btn-secondary">Отмена</button>
+            </div>
+        </div>
+    </div>
+	
+	<!-- Модальное окно импорта -->
+    <div id="importModal" class="modal" style="display: none;" onclick="closeModalOnOutsideClick(event, 'importModal')">
+        <div class="modal-content">
+            <h2>Импорт заметок</h2>
+            
+            <div class="form-group">
+                <label>Выберите JSON файл с заметками</label>
+                <input type="file" id="importFile" accept=".json" style="padding: 0; border: none;">
+                <div class="file-info" id="fileInfo" style="display: none; margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 4px;">
+                    <div id="fileName"></div>
+                    <div id="fileSize"></div>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="importOverwrite" checked>
+                    Заменить существующие заметки с одинаковыми ID
+                </label>
+            </div>
+            
+            <div id="importPreview" class="import-preview" style="display: none;">
+                <h3>Предпросмотр (первые 3 заметки):</h3>
+                <div id="previewContent"></div>
+                <div id="totalNotes" style="margin-top: 10px; font-size: 14px; color: #666;"></div>
+            </div>
+            
+            <div id="importStatus" class="import-status" style="display: none; margin: 15px 0; padding: 10px; border-radius: 4px;"></div>
+            
+            <div class="modal-actions">
+                <button onclick="processImport()" id="importBtn" class="btn-primary" disabled>
+                    <i class="fas fa-upload"></i> Импортировать
+                </button>
+                <button onclick="closeImportModal()" class="btn-secondary">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно экспорта -->
+    <div id="exportModal" class="modal" style="display: none;" onclick="closeModalOnOutsideClick(event, 'exportModal')">
+        <div class="modal-content">
+            <h2>Экспорт заметок</h2>
+            
+            <div class="form-group">
+                <label>Выберите формат экспорта</label>
+                <select id="exportFormat" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="json">JSON (полный)</option>
+                    <option value="json_min">JSON (минимизированный)</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>Параметры экспорта</label>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <label>
+                        <input type="checkbox" id="exportWithTags" checked>
+                        Включать теги
+                    </label>
+                    <label>
+                        <input type="checkbox" id="exportTimestamps" checked>
+                        Включать даты создания/обновления
+                    </label>
+                </div>
+            </div>
+            
+            <div id="exportStats" class="export-stats" style="margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                <h3>Статистика</h3>
+                <div>Всего заметок: <span id="exportTotalNotesCount">0</span></div>
+                <div>Заметок с тегами: <span id="exportNotesWithTags">0</span></div>
+                <div>Всего тегов: <span id="exportTotalTagsCount">0</span></div>
+            </div>
+            
+            <div id="exportStatus" class="export-status" style="display: none; margin: 15px 0; padding: 10px; border-radius: 4px;"></div>
+            
+            <div class="modal-actions">
+                <button onclick="exportNotes()" class="btn-primary">
+                    <i class="fas fa-download"></i> Экспортировать
+                </button>
+                <button onclick="closeExportModal()" class="btn-secondary">Отмена</button>
+            </div>
+        </div>
+    </div>
+	
+	<!-- Модальное окно настроек -->
+	<div id="settingsModal" class="modal" style="display: none;">
+	  <div class="modal-content">
+		<div class="modal-header">
+			<div id="avatarContainerOptions"></div>
+			<span id="userEmailOptions"></span>
+                <button onclick="signOut()" title="Выйти" class="logout-btn">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+		  <button class="close-btn" data-modal-id="settingsModal">
+			<i class="fas fa-times"></i>
+		  </button>
+		  
+		</div>
+		
+		<div class="modal-body">
+			<!-- Кнопки импорта/экспорта -->
+				<div>
+                <button onclick="showExportNotes()" class="btn-icon" title="Экспорт заметок">
+                    <i class="fas fa-download"></i>
+                </button>
+                <button onclick="showImportNotes()" class="btn-icon" title="Импорт заметок">
+                    <i class="fas fa-upload"></i>
+                </button>
+				</div>
+		  <!-- Статистика -->
+		  <div class="settings-section">
+			<h3>Статистика</h3>
+			<div class="statistics">
+			  <div class="stat-item">
+				<span class="stat-label">Всего заметок:</span>
+				<span id="settingsTotalNotesCount" class="stat-value">0</span>
+			  </div>
+			  <div class="stat-item">
+				<span class="stat-label">Тегов:</span>
+				<span id="settingsTotalTagsCount" class="stat-value">0</span>
+			  </div>
+			</div>
+		  </div>
+		  
+		  <!-- Настройки отображения -->
+		  <div class="settings-section">
+			<h3>Настройки отображения</h3>
+			<div class="form-group">
+			  <label for="cardsPerSessionSelect">
+				Количество карточек за сессию:
+			  </label>
+			  <select id="cardsPerSessionSelect" class="form-select">
+				<option value="10">10 карточек</option>
+				<option value="20">20 карточек</option>
+				<option value="30">30 карточек</option>
+			  </select>
+			</div>
+		  </div>
+		</div>
+		
+		<div class="modal-footer">
+		  <button id="saveSettingsBtn" class="btn btn-primary">
+			Сохранить
+		  </button>
+		  <button class="btn btn-secondary" data-modal-id="settingsModal">
+			Отмена
+		  </button>
+		</div>
+	  </div>
+	</div>
+
+    <!-- Попап подтверждения -->
+    <div id="confirmPopup" class="popup" style="display: none;">
+		<div class="popup-content">
+			<div class="popup-message" id="popupMessage"></div>
+			<div class="popup-actions">
+				<button onclick="confirmYes()" class="btn-primary">Да</button>
+				<button onclick="confirmNo()" class="btn-secondary">Нет</button>
+			</div>
+		</div>
+	</div>
+
+    <!-- Попап уведомления -->
+    <div id="alertPopup" class="popup" style="display: none;">
+        <div class="popup-content">
+            <div class="popup-message" id="alertMessage"></div>
+            <div class="popup-actions">
+                <button onclick="closeAlert()" class="btn-primary">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Состояние загрузки -->
+    <div id="loading" class="loading">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Подключаем файлы -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    
+    <script src="firebase-config.js"></script>
+    <script src="app.js"></script>
+    <script src="auth.js"></script>
+    <script src="notes.js"></script>
+    <script src="tags.js"></script>
+    <script src="ui.js"></script>
+    <script src="utils.js"></script>
+    <script src="import-export.js"></script> 
+	<script src="settings.js"></script> 
+</body>
+</html>
