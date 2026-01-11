@@ -1,4 +1,4 @@
-name: Deploy static site to Pages
+name: Deploy Static Website
 
 on:
   push:
@@ -19,6 +19,10 @@ jobs:
       
       - name: Generate Firebase config
         run: |
+          # Удаляем старый конфиг если есть
+          rm -f firebase-config.js
+          
+          # Создаем новый конфиг
           cat > firebase-config.js << 'EOF'
           // AUTO-GENERATED - DO NOT EDIT
           const firebaseConfig = {
@@ -36,6 +40,25 @@ jobs:
           const db = firebase.firestore();
           const auth = firebase.auth();
           EOF
+          
+          echo "✅ Firebase config created"
+          echo "📁 Files in directory:"
+          ls -la
+      
+      - name: Verify HTML structure
+        run: |
+          if [ -f "index.html" ]; then
+            echo "✅ index.html found"
+            # Проверяем подключение firebase-config.js
+            if grep -q "firebase-config.js" index.html; then
+              echo "✅ firebase-config.js is linked in index.html"
+            else
+              echo "⚠️  WARNING: firebase-config.js not found in index.html"
+            fi
+          else
+            echo "❌ ERROR: index.html not found!"
+            exit 1
+          fi
       
       - name: Setup Pages
         uses: actions/configure-pages@v3
